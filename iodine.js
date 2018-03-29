@@ -7,7 +7,9 @@ var MyLink='https://www.iodine.com/drug';
     async.series([
         function(callback){
             request('https://www.iodine.com/drug', function (error, response, body) {
-                if (error) return callback(error); 
+                if (error) {
+                	return callback(error);
+                } 
                 var $ = cheerio.load(body);
 				$('li.col').each(function(){
 		           var clink=$(this).find('a').first().attr('href');
@@ -15,8 +17,7 @@ var MyLink='https://www.iodine.com/drug';
 					   clink= 'https://www.iodine.com'+clink;
 					   TheUrl.push(clink);					   
 		               //console.log(clink);
-				   }
-				   
+				   }				   
 	           });
                 callback();
             });
@@ -37,6 +38,10 @@ var MyLink='https://www.iodine.com/drug';
 		            side_effects:""
                 };	
                 request(url,function (error, response, html) {
+	                if (error) {
+	                    console.log(error); // checking if there is an error
+	                    return;
+	                }
 	                var $ = cheerio.load(html);
                     $('div.depth-1').each(function(){
 		            var key=$(this).find('p.small').first().text().trim();       	
@@ -91,9 +96,15 @@ var MyLink='https://www.iodine.com/drug';
 	                item.side_effects=side_effects;
 	                mongoS.saveData(item);// saving json to mongodb
 	                console.log(item);
+	                
                 });
             }
+             mongoS.closeConnection();
         }
-      ], function(error){
-        if (error) return error;
-    });
+       ], function(error){
+           if (error) {
+        	    console.log(error);
+        	    return error;
+           }
+        }
+   );
