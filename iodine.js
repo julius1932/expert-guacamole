@@ -3,6 +3,26 @@ var cheerio = require ("cheerio");
 var async= require("async");
 var mongoS = require("./mongoSave")// including the code to save json to mongo
 var TheUrl = [];
+var details = [];
+var promisez=[];
+function onCompleteAllRequests(){
+    //We should have all the details now before calling this function
+    console.log(" onCompleteAllRequests ");
+    console.log(details);
+}
+function requestPage(url, callback) {
+  return new Promise(function(resolve, reject) {
+      // Do async job
+        request(url, function(err, resp, body) {
+            if (err) {
+                reject(err);
+                callback();
+            } else {
+                resolve(body);
+            }
+        })
+    })
+}
 var MyLink='https://www.iodine.com/drug';
     async.series([
         function(callback){
@@ -18,13 +38,15 @@ var MyLink='https://www.iodine.com/drug';
 					   TheUrl.push(clink);					   
 		               //console.log(clink);
 				   }				   
-	           });
+	           });		
                 callback();
             });
         },
-        function(callback){
+         function(callback){       	
             for (var i = 0; i <=TheUrl.length-1; i++) {
 				var url = TheUrl[i];
+
+				//console.log(url+" "+i +" "+TheUrl.length);
 				var splts=url.split('/');
 				var drug=splts[splts.length-1];
                 var item={
@@ -37,39 +59,61 @@ var MyLink='https://www.iodine.com/drug';
 		            facts:"",
 		            side_effects:""
                 };	
-                request(url,function (error, response, html) {
-	                if (error) {
-	                    console.log(error); // checking if there is an error
-	                    return;
-	                }
-	                var $ = cheerio.load(html);
-                    $('div.depth-1').each(function(){
-		            var key=$(this).find('p.small').first().text().trim();       	
-		            var valu="";
-	                var uls= $(this).find('ul.p-3 li').text();
-		            for (var i = 0; i <=uls.length-1; i++) {
-			            valu+=uls[i]; 
-		            }
-		            if(key==="Upsides"){
-			           item.Upsides=valu;
-		            }else if (key==="Downsides"){
-			                item.Downsides=valu;
-		            }else if (key==="Used for"){
-			            var usedArr =[];
-			            $(this).find('ul.p-l-3 li.brd-grey-2 a').each(function(){
-				            var usedOb={
-					            link:'https://www.iodine.com/'+$(this).first().attr('href'),
-					            purpose:$(this).text()
-				            }
-				            usedArr.push(usedOb);	
-			            });
-			            item.used_for=usedArr;
-		            }
+                var requestPag = requestPage(url,callback);
+                promisez.push(requestPag);
+                if(i==TheUrl.length-1){
+                  Promise.all(promisez).then(function(values) {
+                     onCompleteAllRequests();
+                });
+                }
+                requestPag.then(function(body) {
+                var $ = cheerio.load(body);
+                 scrapPage($,item);
+                }, function(err) {
+                console.log(err); 
+                    return;   
+                })
+	                
+            }
+            mongoS.closeConnection();
+            callback();
+        },function(callback){   
+        	 callback();
+        }
+        //onCompleteAllRequests()
+       ], function(error){ // this will be called when all request are completed
+            console.log("All request have been send now but not completed")   
+            //onCompleteAllRequests();  	   
+        }     
+   );
+  function scrapPage($,item){
+    $('div.depth-1').each(function(){
+	var key=$(this).find('p.small').first().text().trim();       	
+    var valu="";
+	var uls= $(this).find('ul.p-3 li').text();
+    for (var i = 0; i <=uls.length-1; i++) {
+	    valu+=uls[i]; 
+    }
+   if(key==="Upsides"){
+	    item.Upsides=valu;
+    }else if (key==="Downsides"){
+	    item.Downsides=valu;
+    }else if (key==="Used for"){
+	    var usedArr =[];
+	    $(this).find('ul.p-l-3 li.brd-grey-2 a').each(function(){
+		     var usedOb={
+			      link:'https://www.iodine.com/'+$(this).first().attr('href'),
+			      purpose:$(this).text()
+		        }
+        usedArr.push(usedOb);	
+		});
+	   item.used_for=usedArr;
+    }
 		
-	                });
-	                var facts={
-		                Drug_class:"",
-	                    Rx_status:"",
+	});
+	var facts={
+		   Drug_class:"",
+	          Rx_status:"",
 	                    Generic_status:""
 	                };
 	                $('div.brd-purple ul.p-3 li.m-b-1').each(function(){
@@ -94,17 +138,10 @@ var MyLink='https://www.iodine.com/drug';
 		                side_effects.push($(this).text());
 	                });
 	                item.side_effects=side_effects;
-	                mongoS.saveData(item);// saving json to mongodb
-	                console.log(item);
 	                
-                });
-            }
-             mongoS.closeConnection();
-        }
-       ], function(error){
-           if (error) {
-        	    console.log(error);
-        	    return error;
-           }
-        }
-   );
+	                details.push(item);
+	                mongoS.saveData(item);// saving json to mongodb
+	                //console.log(item);
+	                
+               
+  }
